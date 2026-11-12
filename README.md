@@ -78,4 +78,4 @@ Built by Bobby Ve, No BS AI. I bridge the gap between enterprise AI and entrepre
 
 ---
 
-Want it set up on your number? DM SETUP to @nobsaiHQ on X
+Want it set up on your number? Text SETUP to [(470) 779-2869](sms:+14707792869)
