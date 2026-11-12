@@ -1,0 +1,7 @@
+{
+  "name": "owner-alert-cutoff",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-11",
+  "account_id": "ce24ade1292a201e1e0bf396b384eaaf",
+  "workers_dev": true
+}

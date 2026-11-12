@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Owner alert and follow-up cutoff | No BS AI</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --bg:#0f172a; --card:#111827; --line:#1f2937; --text:#e5e7eb; --muted:#9ca3af; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444; --link:#93c5fd; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:16px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--text); }
+  header, main, footer { padding-left:24px; padding-right:24px; }
+  header { padding-top:20px; padding-bottom:8px; }
+  h1 { font-size:22px; margin:0 0 8px; }
+  h2 { font-size:13px; margin:0 0 10px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  .lead { color:var(--muted); max-width:760px; margin:0 0 12px; }
+  .badges { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:8px 0 0; }
+  .badge { padding:3px 8px; border-radius:999px; font-size:12px; border:1px solid var(--line); }
+  .sim { background:#3b2a05; color:#fcd34d; border-color:#92400e; }
+  .okb { background:#052e16; color:#86efac; border-color:#166534; }
+  .note { background:#3b2a05; border:1px solid #92400e; color:#fde68a; border-radius:10px; padding:12px 14px; margin:12px 24px 0; font-size:14px; }
+  .note p { margin:0 0 6px; } .note p:last-child { margin:0; }
+  main { display:grid; grid-template-columns: 1fr 1fr; gap:16px; padding-top:16px; padding-bottom:24px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } header, .note, main, footer, .cta { padding-left:16px; padding-right:16px; } .note, .cta { margin-left:16px; margin-right:16px; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px 18px; }
+  .card p { margin:0 0 10px; }
+  .card p:last-child { margin:0; }
+  ol, ul { margin:8px 0 0; padding-left:22px; }
+  li { margin:0 0 8px; }
+  a { color:var(--link); }
+  button { padding:10px 12px; min-height:40px; border-radius:6px; border:1px solid #334155; background:#1e293b; color:var(--text); cursor:pointer; font-weight:600; font-size:15px; }
+  button.primary { background:#2563eb; border-color:#2563eb; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  label { display:block; font-size:12px; color:var(--muted); margin:8px 0 4px; }
+  input { width:100%; padding:10px 8px; background:#0b1220; color:var(--text); border:1px solid var(--line); border-radius:6px; font-size:16px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; }
+  .k-new { color:var(--ok); font-weight:600; }
+  .k-dup { color:var(--warn); font-weight:600; }
+  .k-bad { color:var(--bad); font-weight:600; }
+  .muted { color:var(--muted); }
+  code { font-size:12px; }
+  .cta { background:#0b1220; border:1px solid #1d4ed8; border-radius:10px; padding:16px 18px; margin:0 24px 24px; }
+  .cta p { margin:0 0 8px; }
+  .cta p:last-child { margin:0; }
+  footer { color:var(--muted); font-size:13px; padding-bottom:28px; }
+  .clock { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Owner alert and follow-up cutoff</h1>
+  <p class="lead">A free n8n add-on by No BS AI. When a missed-call lead replies, the owner is told right away, and automated follow-up stops. A STOP reply also cuts off follow-up.</p>
+  <div class="badges">
+    <span class="badge sim">This page is a browser sandbox</span>
+    <span class="badge okb">Nothing is sent to a server</span>
+  </div>
+</header>
+
+<div class="note">
+  <p>This page does not send texts, it does not write to a CRM, and it does not collect personal data. The real workflow is the n8n file in the GitHub repo. I have not yet run that workflow against a live Twilio number or a live owner alert.</p>
+</div>
+
+<main>
+  <section class="card">
+    <h2>What it does</h2>
+    <ol>
+      <li>After the first missed-call text, you enroll the caller. A follow-up is scheduled (default: 2 hours later).</li>
+      <li>If the caller writes back, the owner gets the message and later automated follow-up is skipped.</li>
+      <li>If the caller replies STOP, follow-up is cut off too.</li>
+      <li>Before every later send, the workflow re-reads that status. It does not try to cancel a Wait node.</li>
+    </ol>
+    <p style="margin-top:12px">It is an add-on to the <a href="https://github.com/nobsai-hq/missed-call-text-back">missed-call text-back</a> template, not a replacement.</p>
+  </section>
+
+  <section class="card">
+    <h2>How it works</h2>
+    <ol>
+      <li>Import <code>workflow.json</code> into n8n.</li>
+      <li>Edit the three Settings nodes so they share the same values.</li>
+      <li>After your first text goes out, POST the caller to the Enroll Lead URL.</li>
+      <li>Point your number's "a message comes in" webhook at Inbound Reply.</li>
+      <li>Turn the workflow on. The 15 minute check only runs while it is Active.</li>
+    </ol>
+    <p style="margin-top:12px"><a href="https://github.com/nobsai-hq/owner-alert-cutoff">Download the workflow on GitHub</a></p>
+  </section>
+
+  <section class="card">
+    <h2>Try the idea here</h2>
+    <p class="muted">These buttons only update the tables on this page. Phone numbers are fake 555 numbers.</p>
+    <p class="muted clock">Sandbox clock: <strong id="clock"></strong></p>
+    <label>Alex's reply</label>
+    <input id="replyText" value="Can you do Friday at 3?" autocomplete="off">
+    <div class="row">
+      <button class="primary" id="btnStory" type="button">Run the 3-step story</button>
+      <button id="btnEnrollAlex" type="button">Enroll Alex</button>
+      <button id="btnEnrollSam" type="button">Enroll Sam</button>
+      <button id="btnReply" type="button">Alex replies</button>
+      <button id="btnStop" type="button">Alex replies STOP</button>
+      <button id="btnAdvance" type="button">Advance 2 hours</button>
+      <button id="btnDue" type="button">Run due follow-up check</button>
+      <button id="btnReset" type="button">Reset sandbox</button>
+    </div>
+    <p class="muted" style="margin-top:12px">The story enrolls Alex and Sam, lets Alex reply, advances two hours, then runs the due check. Alex should be skipped. Sam should be due for a nudge.</p>
+  </section>
+
+  <section class="card">
+    <h2>Lead status</h2>
+    <p class="muted" id="leadEmpty">No leads yet. Enroll a caller or run the 3-step story.</p>
+    <div class="table-wrap">
+      <table id="leads" hidden>
+        <thead><tr><th>Caller</th><th>Status</th><th>Follow-ups</th><th>Next check</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card" style="grid-column: 1 / -1;">
+    <h2>Sandbox log</h2>
+    <p class="muted" id="empty">No events yet. Press Run the 3-step story, or Enroll Alex.</p>
+    <div class="table-wrap">
+      <table id="log" hidden>
+        <thead><tr><th>Clock</th><th>Caller</th><th>Result</th><th>Detail</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<div class="cta">
+  <p><strong>Want it set up on your number? DM SETUP to @nobsaiHQ on X</strong></p>
+  <p class="muted">The template is free to import. If you want it wired to your number, your missed-call text-back, and an owner alert, send that message and I will follow up.</p>
+</div>
+
+<footer>
+  Built by Bobby Ve, No BS AI. Sister demos:
+  <a href="https://end-of-call-to-crm.news-ce2.workers.dev">end of call to CRM</a>,
+  <a href="https://github.com/nobsai-hq/missed-call-text-back">missed-call text-back</a>,
+  and
+  <a href="https://call-flow-demo.news-ce2.workers.dev">call flow demo</a>.
+</footer>
+
+<script>
+(function () {
+  var ALEX = "+15550109001";
+  var SAM = "+15550109002";
+  var NAMES = {};
+  NAMES[ALEX] = "Alex";
+  NAMES[SAM] = "Sam";
+  var DELAY_MS = 2 * 60 * 60 * 1000;
+  var FROM_HOUR = 8;
+  var UNTIL_HOUR = 21;
+  var MAX = 1;
+
+  var leads = {};
+  var seenSids = {};
+  var clock = new Date("2026-11-11T12:00:00-05:00");
+  var sidN = 0;
+
+  var tbody = document.querySelector("#log tbody");
+  var table = document.querySelector("#log");
+  var empty = document.querySelector("#empty");
+  var leadBody = document.querySelector("#leads tbody");
+  var leadTable = document.querySelector("#leads");
+  var leadEmpty = document.querySelector("#leadEmpty");
+
+  function escapeHtml(s) {
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\"/g,"&quot;");
+  }
+
+  function fmt(d) {
+    return d.toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
+  }
+
+  function label(phone) {
+    return (NAMES[phone] || "Caller") + " " + phone;
+  }
+
+  function renderClock() {
+    document.getElementById("clock").textContent = fmt(clock) + " ET";
+  }
+
+  function renderLeads() {
+    var phones = Object.keys(leads);
+    if (!phones.length) {
+      leadTable.hidden = true;
+      leadEmpty.hidden = false;
+      leadBody.innerHTML = "";
+      return;
+    }
+    leadEmpty.hidden = true;
+    leadTable.hidden = false;
+    leadBody.innerHTML = "";
+    phones.forEach(function (phone) {
+      var lead = leads[phone];
+      var tr = document.createElement("tr");
+      var next = lead.nextAt ? fmt(new Date(lead.nextAt)) + " ET" : "none";
+      var cls = lead.status === "replied" || lead.status === "completed" ? "k-new" : (lead.status === "opted_out" ? "k-bad" : "k-dup");
+      tr.innerHTML = "<td>" + escapeHtml(label(phone)) + "</td><td class='" + cls + "'>" + escapeHtml(lead.status) + "</td><td>" + lead.sent + "</td><td>" + escapeHtml(next) + "</td>";
+      leadBody.appendChild(tr);
+    });
+  }
+
+  function log(phone, result, detail, cls) {
+    empty.hidden = true;
+    table.hidden = false;
+    var tr = document.createElement("tr");
+    tr.innerHTML = "<td class='clock'>" + escapeHtml(fmt(clock)) + " ET</td><td>" + escapeHtml(phone ? label(phone) : "-") + "</td><td class='" + cls + "'>" + escapeHtml(result) + "</td><td>" + escapeHtml(detail) + "</td>";
+    tbody.insertBefore(tr, tbody.firstChild);
+    renderLeads();
+    renderClock();
+  }
+
+  function enroll(phone) {
+    var lead = leads[phone];
+    if (lead && lead.status === "opted_out") {
+      log(phone, "skipped", "caller opted out, no new follow-up", "k-bad");
+      return;
+    }
+    if (lead && lead.status === "waiting") {
+      log(phone, "already waiting", "left the existing follow-up time in place", "k-dup");
+      return;
+    }
+    leads[phone] = { status: "waiting", nextAt: clock.getTime() + DELAY_MS, sent: 0 };
+    log(phone, "enrolled", "follow-up scheduled for " + fmt(new Date(clock.getTime() + DELAY_MS)) + " ET", "k-new");
+  }
+
+  function keyword(text) {
+    var t = String(text || "").trim().toLowerCase().replace(/\s+/g, " ");
+    if (!t) return "";
+    var first = t.split(" ")[0].replace(/[^a-z]/g, "");
+    var compact = t.replace(/[^a-z\s]/g, "").trim();
+    var STOP = ["stop","stopall","unsubscribe","cancel","end","quit","revoke","opt out","optout"];
+    var START = ["start","unstop","yes"];
+    if (STOP.indexOf(t) >= 0 || STOP.indexOf(first) >= 0 || STOP.indexOf(compact) >= 0) return "stop";
+    if (START.indexOf(t) >= 0 || START.indexOf(compact) >= 0) return "start";
+    return "";
+  }
+
+  function reply(phone, text, sid) {
+    if (sid && seenSids[sid]) {
+      log(phone, "duplicate", "message already processed, no second owner alert", "k-dup");
+      return;
+    }
+    if (sid) seenSids[sid] = true;
+    if (!leads[phone]) leads[phone] = { status: "waiting", nextAt: null, sent: 0 };
+    var kind = keyword(text);
+    if (kind === "stop") {
+      leads[phone].status = "opted_out";
+      leads[phone].nextAt = null;
+      log(phone, "opted out", "owner would be told. Automated follow-up is off.", "k-bad");
+      return;
+    }
+    if (kind === "start") {
+      if (leads[phone].status === "opted_out") leads[phone].status = "completed";
+      log(phone, "opted in", "opt-out cleared. A new follow-up is not started on its own.", "k-dup");
+      return;
+    }
+    if (!String(text || "").trim()) {
+      log(phone, "skipped", "empty message body", "k-dup");
+      return;
+    }
+    leads[phone].status = "replied";
+    leads[phone].nextAt = null;
+    log(phone, "replied", "owner would be told: \"" + text + "\". Later follow-up is skipped.", "k-new");
+  }
+
+  function nextOpen(ms) {
+    var d = new Date(ms);
+    for (var i = 0; i < 48; i++) {
+      var hour = Number(d.toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }));
+      // hour12 false can still yield 24 in some engines; normalize
+      if (hour === 24) hour = 0;
+      if (hour >= FROM_HOUR && hour < UNTIL_HOUR) return d.getTime();
+      d = new Date(d.getTime() + 60 * 60 * 1000);
+      d.setMinutes(0, 0, 0);
+    }
+    return ms + 10 * 60 * 60 * 1000;
+  }
+
+  function hourEt(ms) {
+    var hour = Number(new Date(ms).toLocaleString("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }));
+    if (hour === 24) hour = 0;
+    return hour;
+  }
+
+  function checkDue() {
+    var any = false;
+    Object.keys(leads).forEach(function (phone) {
+      var lead = leads[phone];
+      if (lead.status !== "waiting" || !lead.nextAt) return;
+      if (lead.nextAt > clock.getTime()) return;
+      any = true;
+      var hour = hourEt(clock.getTime());
+      if (hour < FROM_HOUR || hour >= UNTIL_HOUR) {
+        lead.nextAt = nextOpen(clock.getTime());
+        log(phone, "quiet hours", "send moved to the next open window", "k-dup");
+        return;
+      }
+      lead.sent += 1;
+      lead.status = lead.sent >= MAX ? "completed" : "waiting";
+      lead.nextAt = lead.status === "completed" ? null : clock.getTime() + DELAY_MS;
+      log(phone, "follow-up would send", "nudge " + lead.sent + " of " + MAX + ". Status is now " + lead.status + ".", "k-new");
+    });
+    if (!any) log("", "none due", "no waiting leads are due at this clock time", "k-dup");
+  }
+
+  function reset() {
+    leads = {};
+    seenSids = {};
+    clock = new Date("2026-11-11T12:00:00-05:00");
+    sidN = 0;
+    tbody.innerHTML = "";
+    table.hidden = true;
+    empty.hidden = false;
+    renderLeads();
+    renderClock();
+  }
+
+  document.getElementById("btnEnrollAlex").onclick = function () { enroll(ALEX); };
+  document.getElementById("btnEnrollSam").onclick = function () { enroll(SAM); };
+  document.getElementById("btnReply").onclick = function () {
+    sidN += 1;
+    reply(ALEX, document.getElementById("replyText").value, "sm-demo-" + sidN);
+  };
+  document.getElementById("btnStop").onclick = function () {
+    sidN += 1;
+    reply(ALEX, "STOP", "sm-stop-" + sidN);
+  };
+  document.getElementById("btnAdvance").onclick = function () {
+    clock = new Date(clock.getTime() + DELAY_MS);
+    log("", "clock moved", "sandbox clock is now " + fmt(clock) + " ET", "k-dup");
+  };
+  document.getElementById("btnDue").onclick = function () { checkDue(); };
+  document.getElementById("btnReset").onclick = function () { reset(); };
+  document.getElementById("btnStory").onclick = function () {
+    reset();
+    enroll(ALEX);
+    enroll(SAM);
+    sidN += 1;
+    reply(ALEX, document.getElementById("replyText").value || "Can you do Friday at 3?", "sm-story");
+    clock = new Date(clock.getTime() + DELAY_MS);
+    log("", "clock moved", "sandbox clock is now " + fmt(clock) + " ET", "k-dup");
+    checkDue();
+  };
+
+  reset();
+})();
+</script>
+</body>
+</html>

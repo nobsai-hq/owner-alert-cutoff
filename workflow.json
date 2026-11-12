@@ -1,0 +1,537 @@
+{
+  "name": "Owner Alert and Follow-up Cutoff (No BS AI template)",
+  "nodes": [
+    {
+      "id": "76a779e4-27c1-41f4-9e64-8c9551b7d10f",
+      "name": "Enroll Lead",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "enroll",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "d797ca82-3d4f-406a-bc75-f58d4346b078"
+    },
+    {
+      "id": "f0d00c5f-dd7e-423f-af14-bdeac882c34e",
+      "name": "Settings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// EDIT THESE. Sample values only. Do not put API tokens here.\nconst settings = {\n  business_name: 'Sample Barber Shop',\n  booking_link: 'https://example.com/book',\n  // Your texting number, in +1 format. This is a fake sample number.\n  from_number: '+15555550100',\n  // Twilio send-message address. Put YOUR Account SID in place of YOUR_ACCOUNT_SID.\n  sms_api_url: 'https://api.twilio.com/2010-04-01/Accounts/YOUR_ACCOUNT_SID/Messages.json',\n  timezone: 'America/New_York',\n  // Only send follow-up texts between these hours (24 hour clock, local time).\n  text_from_hour: 8,\n  text_until_hour: 21,\n  // How long to wait after enrollment before the first (and by default only) follow-up.\n  followup_delay_minutes: 120,\n  // How many automated follow-ups to send after the first missed-call text. 1 is a single nudge.\n  max_followups: 1,\n  // Optional. Slack, Make, or email inbound webhook. Leave blank to skip.\n  owner_webhook_url: '',\n  // Optional. If set, and SMS is configured, the owner also gets a text.\n  owner_phone: '',\n  // Also tell the owner when someone replies STOP.\n  alert_on_stop: true,\n};\n\nreturn $input.all().map(item => ({ json: { ...item.json, settings } }));\n"
+      }
+    },
+    {
+      "id": "871d0864-5c99-4cb5-acdb-8bedf01856b5",
+      "name": "Enroll or Skip",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Enroll a caller after the first missed-call text went out.\n// Status lives in this workflow's static data. It only saves when the workflow is Active.\nconst item = $input.first().json;\nconst settings = item.settings;\nconst body = item.body !== undefined ? item.body : item;\n\nfunction normalizePhone(raw) {\n  const s = String(raw || '').trim();\n  if (!s || /anonymous|restricted|unknown|blocked/i.test(s)) return '';\n  const digits = s.replace(/\\D/g, '');\n  if (digits.length === 10) return '+1' + digits;\n  if (digits.length === 11 && digits.startsWith('1')) return '+' + digits;\n  if (s.startsWith('+') && digits.length >= 8 && digits.length <= 15) return '+' + digits;\n  if (/^\\+[1-9]\\d{7,14}$/.test(s)) return s;\n  return '';\n}\n\nconst caller = normalizePhone(body.caller_phone || body.From || body.from || body.phone || '');\nconst source = String(body.source || body.Source || 'enroll').slice(0, 80);\nconst store = $getWorkflowStaticData('global');\nstore.leads = store.leads || {};\n\nconst now = DateTime.now().setZone(settings.timezone);\nlet action = 'skipped';\nlet skip_reason = '';\nlet lead = null;\n\nif (!caller) {\n  skip_reason = 'no valid caller number (maybe blocked or private)';\n} else if (store.leads[caller] && store.leads[caller].status === 'opted_out') {\n  skip_reason = 'caller opted out';\n  lead = store.leads[caller];\n  action = 'skipped_opted_out';\n} else if (store.leads[caller] && store.leads[caller].status === 'waiting') {\n  lead = store.leads[caller];\n  action = 'already_waiting';\n  skip_reason = 'already enrolled and waiting; left the existing follow-up time in place';\n} else {\n  const next = now.plus({ minutes: Number(settings.followup_delay_minutes) || 120 });\n  lead = {\n    status: 'waiting',\n    enrolled_at: now.toISO(),\n    next_followup_at: next.toMillis(),\n    followups_sent: 0,\n    source,\n    last_inbound: '',\n    last_inbound_at: '',\n  };\n  store.leads[caller] = lead;\n  action = 'enrolled';\n}\n\nreturn [{\n  json: {\n    settings,\n    caller_phone: caller,\n    action,\n    skip_reason,\n    status: lead ? lead.status : '',\n    next_followup_at: lead ? lead.next_followup_at : null,\n    followups_sent: lead ? lead.followups_sent : 0,\n  }\n}];\n"
+      }
+    },
+    {
+      "id": "8247a4c3-875a-444d-a217-51bef8539664",
+      "name": "Inbound Reply",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        320
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "reply",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "6247338f-a82b-4b02-b508-59c62607a891"
+    },
+    {
+      "id": "fe23a16f-7c94-4dba-bc1d-421a1f733da5",
+      "name": "Settings Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        320
+      ],
+      "parameters": {
+        "jsCode": "// EDIT THESE. Sample values only. Do not put API tokens here.\nconst settings = {\n  business_name: 'Sample Barber Shop',\n  booking_link: 'https://example.com/book',\n  // Your texting number, in +1 format. This is a fake sample number.\n  from_number: '+15555550100',\n  // Twilio send-message address. Put YOUR Account SID in place of YOUR_ACCOUNT_SID.\n  sms_api_url: 'https://api.twilio.com/2010-04-01/Accounts/YOUR_ACCOUNT_SID/Messages.json',\n  timezone: 'America/New_York',\n  // Only send follow-up texts between these hours (24 hour clock, local time).\n  text_from_hour: 8,\n  text_until_hour: 21,\n  // How long to wait after enrollment before the first (and by default only) follow-up.\n  followup_delay_minutes: 120,\n  // How many automated follow-ups to send after the first missed-call text. 1 is a single nudge.\n  max_followups: 1,\n  // Optional. Slack, Make, or email inbound webhook. Leave blank to skip.\n  owner_webhook_url: '',\n  // Optional. If set, and SMS is configured, the owner also gets a text.\n  owner_phone: '',\n  // Also tell the owner when someone replies STOP.\n  alert_on_stop: true,\n};\n\nreturn $input.all().map(item => ({ json: { ...item.json, settings } }));\n"
+      }
+    },
+    {
+      "id": "ed9619d8-e493-42c3-a862-7c0b625cd125",
+      "name": "Classify Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        320
+      ],
+      "parameters": {
+        "jsCode": "// Classify an inbound text. STOP cuts off follow-up. A real reply alerts the owner and cuts off follow-up.\n// START clears the opt-out but does not start a new follow-up on its own.\nconst item = $input.first().json;\nconst settings = item.settings;\nconst body = item.body !== undefined ? item.body : item;\n\nconst STOP = ['stop', 'stopall', 'unsubscribe', 'cancel', 'end', 'quit', 'revoke', 'opt out', 'optout'];\nconst START = ['start', 'unstop', 'yes'];\n\nfunction normalizePhone(raw) {\n  const s = String(raw || '').trim();\n  if (!s || /anonymous|restricted|unknown|blocked/i.test(s)) return '';\n  const digits = s.replace(/\\D/g, '');\n  if (digits.length === 10) return '+1' + digits;\n  if (digits.length === 11 && digits.startsWith('1')) return '+' + digits;\n  if (s.startsWith('+') && digits.length >= 8 && digits.length <= 15) return '+' + digits;\n  if (/^\\+[1-9]\\d{7,14}$/.test(s)) return s;\n  return '';\n}\n\nfunction keyword(text) {\n  const t = String(text || '').trim().toLowerCase().replace(/\\s+/g, ' ');\n  if (!t) return '';\n  const first = t.split(' ')[0].replace(/[^a-z]/g, '');\n  const compact = t.replace(/[^a-z\\s]/g, '').trim();\n  // STOP is matched on the first word so \"STOP texting me\" still opts out.\n  if (STOP.includes(t) || STOP.includes(first) || STOP.includes(compact)) return 'stop';\n  // START and YES only count when the whole message is that word, so \"Yes, Friday works\" stays a real reply.\n  if (START.includes(t) || START.includes(compact)) return 'start';\n  return '';\n}\n\nconst caller = normalizePhone(body.From || body.from || body.caller_phone || body.phone || '');\nconst text = String(body.Body || body.body || body.text || '').trim();\nconst message_sid = String(body.MessageSid || body.message_sid || body.SmsSid || body.sid || '').trim();\nconst store = $getWorkflowStaticData('global');\nstore.leads = store.leads || {};\nstore.seen_sids = store.seen_sids || {};\n\nconst now = DateTime.now().setZone(settings.timezone);\nlet action = 'ignored';\nlet skip_reason = '';\nlet notify_owner = false;\nlet lead = caller ? (store.leads[caller] || null) : null;\n\nif (!caller) {\n  skip_reason = 'no valid caller number';\n  action = 'skipped';\n} else if (message_sid && store.seen_sids[message_sid]) {\n  skip_reason = 'message_sid already processed';\n  action = 'duplicate';\n} else {\n  if (message_sid) store.seen_sids[message_sid] = now.toMillis();\n  // Cap remembered SIDs so the list cannot grow forever.\n  const sids = Object.keys(store.seen_sids);\n  if (sids.length > 500) {\n    sids.sort((a, b) => store.seen_sids[a] - store.seen_sids[b]);\n    for (const id of sids.slice(0, sids.length - 500)) delete store.seen_sids[id];\n  }\n\n  const kind = keyword(text);\n  if (!lead) {\n    lead = {\n      status: 'waiting',\n      enrolled_at: now.toISO(),\n      next_followup_at: null,\n      followups_sent: 0,\n      source: 'inbound-only',\n      last_inbound: '',\n      last_inbound_at: '',\n    };\n  }\n\n  if (kind === 'stop') {\n    lead.status = 'opted_out';\n    lead.next_followup_at = null;\n    lead.last_inbound = text;\n    lead.last_inbound_at = now.toISO();\n    store.leads[caller] = lead;\n    action = 'opted_out';\n    notify_owner = !!settings.alert_on_stop;\n  } else if (kind === 'start') {\n    if (lead.status === 'opted_out') lead.status = 'completed';\n    lead.last_inbound = text;\n    lead.last_inbound_at = now.toISO();\n    store.leads[caller] = lead;\n    action = 'opted_in';\n    notify_owner = false;\n  } else if (!text) {\n    action = 'skipped';\n    skip_reason = 'empty message body';\n  } else {\n    lead.status = 'replied';\n    lead.next_followup_at = null;\n    lead.last_inbound = text;\n    lead.last_inbound_at = now.toISO();\n    store.leads[caller] = lead;\n    action = 'replied';\n    notify_owner = true;\n  }\n}\n\nconst owner_text = action === 'replied'\n  ? ('Reply for ' + settings.business_name + ' from ' + caller + ': ' + text)\n  : (action === 'opted_out'\n    ? (caller + ' replied STOP. Automated follow-up is off.')\n    : '');\n\nreturn [{\n  json: {\n    settings,\n    caller_phone: caller,\n    text,\n    message_sid,\n    action,\n    skip_reason,\n    status: lead ? lead.status : '',\n    notify_owner,\n    notify_owner_sms: notify_owner && !!(settings.owner_phone),\n    notify_owner_webhook: notify_owner && !!(settings.owner_webhook_url),\n    owner_text,\n  }\n}];\n"
+      }
+    },
+    {
+      "id": "1d1fd59b-9b4c-4413-87ca-ad03ca8552f8",
+      "name": "Notify Owner Webhook?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        780,
+        220
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cc108f30-d147-459b-b1a8-ba6aaf0bced6",
+              "leftValue": "={{ $json.notify_owner_webhook }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "4bfa435a-bcc5-4c96-87c5-1a99644cb061",
+      "name": "Owner Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1060,
+        160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.settings.owner_webhook_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.owner_text, caller_phone: $json.caller_phone, action: $json.action, business: $json.settings.business_name }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "e5061b97-84b2-4907-b67a-3d6c0604580d",
+      "name": "Notify Owner SMS?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        780,
+        420
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "fe1fd0e0-600b-4fd9-9eb0-868ef73e3f3b",
+              "leftValue": "={{ $json.notify_owner_sms }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d22a9ee3-9884-4c91-b1a2-b6d1dd0159ed",
+      "name": "Owner SMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1060,
+        420
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.settings.sms_api_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.settings.owner_phone }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $json.settings.from_number }}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $json.owner_text }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "626a6b65-46e9-49af-8cb0-5535abde20b8",
+      "name": "Every 15 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        680
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "8b04095b-b8d7-466e-b1fb-fe765cd624ce",
+      "name": "Check Due Now",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        860
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "check-due",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "63fdd046-090c-408b-a785-a609d854aed0"
+    },
+    {
+      "id": "9d57eecf-6113-48c7-8dcc-e32ef3f30d77",
+      "name": "Settings Due",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        760
+      ],
+      "parameters": {
+        "jsCode": "// EDIT THESE. Sample values only. Do not put API tokens here.\nconst settings = {\n  business_name: 'Sample Barber Shop',\n  booking_link: 'https://example.com/book',\n  // Your texting number, in +1 format. This is a fake sample number.\n  from_number: '+15555550100',\n  // Twilio send-message address. Put YOUR Account SID in place of YOUR_ACCOUNT_SID.\n  sms_api_url: 'https://api.twilio.com/2010-04-01/Accounts/YOUR_ACCOUNT_SID/Messages.json',\n  timezone: 'America/New_York',\n  // Only send follow-up texts between these hours (24 hour clock, local time).\n  text_from_hour: 8,\n  text_until_hour: 21,\n  // How long to wait after enrollment before the first (and by default only) follow-up.\n  followup_delay_minutes: 120,\n  // How many automated follow-ups to send after the first missed-call text. 1 is a single nudge.\n  max_followups: 1,\n  // Optional. Slack, Make, or email inbound webhook. Leave blank to skip.\n  owner_webhook_url: '',\n  // Optional. If set, and SMS is configured, the owner also gets a text.\n  owner_phone: '',\n  // Also tell the owner when someone replies STOP.\n  alert_on_stop: true,\n};\n\nreturn $input.all().map(item => ({ json: { ...item.json, settings } }));\n"
+      }
+    },
+    {
+      "id": "34d684f1-1b12-4e4a-8d6f-2f38373d2b9f",
+      "name": "Pick Due Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        760
+      ],
+      "parameters": {
+        "jsCode": "// Find waiting leads whose follow-up time has passed. Do not send if they replied or opted out.\n// Optional test payload: { \"now\": \"2026-11-12T16:00:00-05:00\" } to pretend it is that time.\nconst item = $input.first().json;\nconst settings = item.settings;\nconst body = item.body !== undefined ? item.body : item;\nconst store = $getWorkflowStaticData('global');\nstore.leads = store.leads || {};\n\nconst zone = settings.timezone || 'America/New_York';\nconst now = body && body.now ? DateTime.fromISO(String(body.now), { zone }) : DateTime.now().setZone(zone);\nconst smsReady = settings.from_number && settings.sms_api_url && !String(settings.sms_api_url).includes('YOUR_ACCOUNT_SID');\n\nfunction nextOpenWindow(dt) {\n  const start = Number(settings.text_from_hour);\n  const end = Number(settings.text_until_hour);\n  let cursor = dt;\n  for (let i = 0; i < 48; i++) {\n    if (cursor.hour >= start && cursor.hour < end) return cursor;\n    if (cursor.hour >= end) {\n      cursor = cursor.plus({ days: 1 }).set({ hour: start, minute: 0, second: 0, millisecond: 0 });\n    } else {\n      cursor = cursor.set({ hour: start, minute: 0, second: 0, millisecond: 0 });\n    }\n  }\n  return dt.plus({ days: 1 }).set({ hour: start, minute: 0, second: 0, millisecond: 0 });\n}\n\nconst due = [];\nfor (const [phone, lead] of Object.entries(store.leads)) {\n  if (!lead || lead.status !== 'waiting') continue;\n  if (!lead.next_followup_at) continue;\n  if (lead.next_followup_at > now.toMillis()) continue;\n  if ((lead.followups_sent || 0) >= (Number(settings.max_followups) || 1)) {\n    lead.status = 'completed';\n    lead.next_followup_at = null;\n    continue;\n  }\n\n  const inQuiet = now.hour < Number(settings.text_from_hour) || now.hour >= Number(settings.text_until_hour);\n  if (inQuiet) {\n    const open = nextOpenWindow(now);\n    lead.next_followup_at = open.toMillis();\n    lead.last_skip_reason = 'quiet hours; moved to ' + open.toISO();\n    continue;\n  }\n\n  const message = 'Hi, it is ' + settings.business_name +\n    '. Just checking in if you still need a time. Book here: ' + settings.booking_link +\n    ' or reply to this text and we will get back to you. Reply STOP to opt out.';\n\n  due.push({\n    json: {\n      settings,\n      caller_phone: phone,\n      action: 'due',\n      status: lead.status,\n      followups_sent: lead.followups_sent || 0,\n      ok_to_send: !!smsReady,\n      skip_reason: smsReady ? '' : 'SMS is not configured yet (sms_api_url still has YOUR_ACCOUNT_SID, or from_number is empty)',\n      message,\n      now: now.toISO(),\n    }\n  });\n}\n\nif (!due.length) {\n  return [{\n    json: {\n      settings,\n      caller_phone: '',\n      action: 'none_due',\n      status: '',\n      followups_sent: 0,\n      ok_to_send: false,\n      skip_reason: 'no waiting leads are due',\n      message: '',\n      now: now.toISO(),\n    }\n  }];\n}\n\nreturn due;\n"
+      }
+    },
+    {
+      "id": "3855381a-5936-4f2c-bde8-9d3bf6446402",
+      "name": "Send Follow-up?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        780,
+        760
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "36eee472-63e6-4d96-a225-8650bda03518",
+              "leftValue": "={{ $json.ok_to_send }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "7f625be4-5583-44d0-bafc-a6536603dbc5",
+      "name": "Send Follow-up SMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1060,
+        680
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.settings.sms_api_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "To",
+              "value": "={{ $json.caller_phone }}"
+            },
+            {
+              "name": "From",
+              "value": "={{ $json.settings.from_number }}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $json.message }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "446f9923-e7ef-4856-80c7-ee849db2e59b",
+      "name": "Record Send",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        680
+      ],
+      "parameters": {
+        "jsCode": "// Record that a follow-up went out. Schedule another one only if max_followups is greater than 1.\nconst item = $input.first().json;\nconst settings = item.settings;\nconst store = $getWorkflowStaticData('global');\nstore.leads = store.leads || {};\nconst lead = store.leads[item.caller_phone];\nconst now = item.now ? DateTime.fromISO(String(item.now), { zone: settings.timezone }) : DateTime.now().setZone(settings.timezone);\n\nlet action = 'recorded';\nif (!lead) {\n  action = 'missing_lead';\n} else if (lead.status !== 'waiting') {\n  action = 'status_changed_before_send';\n} else {\n  lead.followups_sent = (lead.followups_sent || 0) + 1;\n  lead.last_followup_at = now.toISO();\n  if (lead.followups_sent >= (Number(settings.max_followups) || 1)) {\n    lead.status = 'completed';\n    lead.next_followup_at = null;\n    action = 'completed';\n  } else {\n    const next = now.plus({ minutes: Number(settings.followup_delay_minutes) || 120 });\n    lead.next_followup_at = next.toMillis();\n    action = 'scheduled_next';\n  }\n  store.leads[item.caller_phone] = lead;\n}\n\nreturn [{\n  json: {\n    ...item,\n    action,\n    status: lead ? lead.status : '',\n    followups_sent: lead ? lead.followups_sent : item.followups_sent,\n  }\n}];\n"
+      }
+    },
+    {
+      "id": "096b06db-2032-4bee-879a-070cae677173",
+      "name": "Read Me",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -420
+      ],
+      "parameters": {
+        "content": "## Owner alert and follow-up cutoff\nBuilt by Bobby Ve, No BS AI.\n\nThis is an add-on to the missed-call text-back template. It does not replace it.\n\n1. Edit the Settings nodes (there are three, with the same values).\n2. After your first missed-call text goes out, POST the caller to the Enroll Lead production URL.\n3. Point your number's \"a message comes in\" webhook at Inbound Reply.\n4. Add a Basic Auth credential to Send Follow-up SMS and Owner SMS (Twilio Account SID + Auth Token).\n5. Turn the workflow on so the lead list can save. The 15 minute check only runs while it is Active.\n\nWhen a caller replies, the owner is alerted and later automated follow-up is skipped. STOP also cuts off follow-up.\n\nDo not try to cancel a Wait node. This workflow keeps a status per phone and reads it before every send.\n",
+        "height": 420,
+        "width": 520
+      }
+    }
+  ],
+  "connections": {
+    "Enroll Lead": {
+      "main": [
+        [
+          {
+            "node": "Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Settings": {
+      "main": [
+        [
+          {
+            "node": "Enroll or Skip",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inbound Reply": {
+      "main": [
+        [
+          {
+            "node": "Settings Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Settings Reply": {
+      "main": [
+        [
+          {
+            "node": "Classify Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Reply": {
+      "main": [
+        [
+          {
+            "node": "Notify Owner Webhook?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Owner SMS?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Owner Webhook?": {
+      "main": [
+        [
+          {
+            "node": "Owner Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Owner SMS?": {
+      "main": [
+        [
+          {
+            "node": "Owner SMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 15 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Settings Due",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Due Now": {
+      "main": [
+        [
+          {
+            "node": "Settings Due",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Settings Due": {
+      "main": [
+        [
+          {
+            "node": "Pick Due Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Due Leads": {
+      "main": [
+        [
+          {
+            "node": "Send Follow-up?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-up?": {
+      "main": [
+        [
+          {
+            "node": "Send Follow-up SMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-up SMS": {
+      "main": [
+        [
+          {
+            "node": "Record Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "builtBy": "Bobby Ve, No BS AI"
+  },
+  "tags": []
+}
